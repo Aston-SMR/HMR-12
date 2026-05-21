@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>HMR Card Counting</title>
+<style>
+body{margin:0;background:#000;color:#fff;font-family:Arial}
+.app{padding:12px;max-width:900px;margin:auto}
+.row{display:flex;gap:8px;margin-bottom:8px}
+.box{flex:1;background:#111;border:1px solid #444;border-radius:12px;padding:10px}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+.card{height:48px;border:1px solid #666;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:bold;background:#1a1a1a;cursor:pointer}
+.keys{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:10px}
+.key{height:42px;background:#222;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:bold}
+.predict{background:#111;border:1px solid #444;border-radius:12px;padding:12px;margin-top:10px}
+.big{font-size:28px;font-weight:900}
+.meta{margin-top:6px;color:#ccc}
+.btns{display:flex;gap:8px;margin-top:10px}
+button.action{flex:1;height:42px;border:none;border-radius:10px;font-weight:900}
+#nextBtn{background:#f5d06f;color:#000}
+#clearBtn{background:#aaa}
+.score{font-size:18px;font-weight:bold}
+</style>
+</head>
+<body>
+<div class="app">
+<h1>HMR Card Counting</h1>
+<div class="row">
+<div class="box">
+<div>PLAYER</div>
+<div class="cards">
+<div class="card" id="p1"></div>
+<div class="card" id="p2"></div>
+<div class="card" id="p3"></div>
+</div>
+</div>
+<div class="box">
+<div>BANKER</div>
+<div class="cards">
+<div class="card" id="b1"></div>
+<div class="card" id="b2"></div>
+<div class="card" id="b3"></div>
+</div>
+</div>
+</div>
+
+<div class="predict">
+<div class="score" id="scoreText">閒 0 ｜ 莊 0</div>
+<div class="big" id="predictText">H:-　M:-　R:-</div>
+<div class="meta" id="metaText">等待輸入</div>
+<div class="btns">
+<button class="action" id="nextBtn">下一局</button>
+<button class="action" id="clearBtn">清除</button>
+</div>
+</div>
+
+<div class="keys" id="keys"></div>
+</div>
+
+<script>
+const cards=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const values=['','','','','',''];
+let step=0;
+
+const keyWrap=document.getElementById('keys');
+
+cards.forEach(c=>{
+ const b=document.createElement('button');
+ b.className='key';
+ b.textContent=c;
+ b.onclick=()=>input(c);
+ keyWrap.appendChild(b);
+});
+
+const skip=document.createElement('button');
+skip.className='key';
+skip.textContent='不補';
+skip.onclick=()=>{if(step<6){step++;render();}};
+keyWrap.appendChild(skip);
+
+function val(c){
+ if(!c)return 0;
+ if(c==='A')return 1;
+ if(['10','J','Q','K'].includes(c))return 0;
+ return parseInt(c)||0;
+}
+
+function input(card){
+ if(step>=6)return;
+ const map=[0,1,2,3,4,5];
+ values[map[step]]=card;
+ step++;
+ render();
+}
+
+function evaluateM(player,banker,all){
+ const p=player.reduce((a,b)=>a+val(b),0);
+ const b=banker.reduce((a,b)=>a+val(b),0);
+ const diff=p-b;
+ const publicCount=all.filter(c=>['10','J','Q','K'].includes(c)).length;
+ const s1=diff>=0?'正':'負';
+ const s2=publicCount%2===0?'正':'負';
+ const final=s1===s2?'正':'負';
+ return {
+  pick:final==='正'?'閒':'莊',
+  meta:'點差:'+diff+' 公牌:'+publicCount
+ };
+}
+
+function evaluateR(player,banker,all){
+ const p=player.reduce((a,b)=>a+val(b),0)%10;
+ const b=banker.reduce((a,b)=>a+val(b),0)%10;
+ const total=p+b;
+ const publicCount=all.filter(c=>['10','J','Q','K'].includes(c)).length;
+ const flip=all.length>=5||(all.length===4&&publicCount===0);
+ let pick=total<=9?'閒':'莊';
+ if(flip)pick=pick==='閒'?'莊':'閒';
+ return {
+  pick,
+  meta:'尾數:'+total+' 翻邊:'+(flip?'是':'否')
+ };
+}
+
+function evaluateH(player,banker){
+ if(player.length<2||banker.length<2){
+  return {pick:'-',meta:'HE值:-'};
+ }
+
+ const pDiff=Math.max(val(player[0]),val(player[1]))-Math.min(val(player[0]),val(player[1]));
+ const bDiff=Math.max(val(banker[0]),val(banker[1]))-Math.min(val(banker[0]),val(banker[1]));
+
+ let result=Math.max(pDiff,bDiff)-Math.min(pDiff,bDiff);
+
+ const p3=player[2]?val(player[2])/2:null;
+ const b3=banker[2]?val(banker[2])/2:null;
+
+ const total=player.length+banker.length;
+
+ if(total===4){
+  result=result/2;
+  result=result/2;
+ }else{
+  if(p3!==null&&b3!==null){
+   result=result-(Math.max(p3,b3)-Math.min(p3,b3));
+  }else if(p3!==null){
+   result=result-p3;
+  }else if(b3!==null){
+   result=result-b3;
+  }
+ }
+
+ if(result>3)result=result/2;
+
+ return {
+  pick:result<=1.999?'閒':'莊',
+  meta:'HE值:'+result.toFixed(2)
+ };
+}
+
+function render(){
+ document.getElementById('p1').textContent=values[0];
+ document.getElementById('p2').textContent=values[1];
+ document.getElementById('p3').textContent=values[4];
+ document.getElementById('b1').textContent=values[2];
+ document.getElementById('b2').textContent=values[3];
+ document.getElementById('b3').textContent=values[5];
+
+ const player=[values[0],values[1],values[4]].filter(Boolean);
+ const banker=[values[2],values[3],values[5]].filter(Boolean);
+ const all=[...player,...banker];
+
+ const pScore=player.reduce((a,b)=>a+val(b),0)%10;
+ const bScore=banker.reduce((a,b)=>a+val(b),0)%10;
+
+ document.getElementById('scoreText').textContent='閒 '+pScore+' ｜ 莊 '+bScore;
+
+ const h=evaluateH(player,banker);
+ const m=evaluateM(player,banker,all);
+ const r=evaluateR(player,banker,all);
+
+ document.getElementById('predictText').textContent='H:'+h.pick+'　M:'+m.pick+'　R:'+r.pick;
+ document.getElementById('metaText').textContent=h.meta+' ｜ '+m.meta+' ｜ '+r.meta;
+}
+
+document.getElementById('clearBtn').onclick=()=>{
+ for(let i=0;i<6;i++)values[i]='';
+ step=0;
+ render();
+};
+
+document.getElementById('nextBtn').onclick=()=>{
+ alert('下一局正常');
+ for(let i=0;i<6;i++)values[i]='';
+ step=0;
+ render();
+};
+
+render();
+</script>
+
+</body>
+</html>
